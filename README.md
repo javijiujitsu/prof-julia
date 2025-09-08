@@ -128,8 +128,6 @@ src/
 ## 🚧 Future Enhancements
 
 ### Advanced Features
-
-### Advanced Features
 - Speech-to-Speech pronunciation modeling
 - LiveKit voice rooms for multi-user sessions
 - Advanced phonetic analysis with IPA notation
