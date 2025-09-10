@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Mic, MicOff, Volume2, Star, Target } from 'lucide-react';
+import { Mic, MicOff, Volume2, Star, Target, AlertTriangle } from 'lucide-react';
 import { FrenchTutorEngine } from '@/lib/frenchTutor';
 
 interface Lesson {
@@ -32,8 +32,24 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
   const [frenchResponse, setFrenchResponse] = useState('');
   const [systemStatus, setSystemStatus] = useState('Ready to start');
   const [tutorEngine] = useState(() => new FrenchTutorEngine());
+  const [isMobile, setIsMobile] = useState(false);
+  const [hasUserInteracted, setHasUserInteracted] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
   const recognitionRef = useRef<any>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Detect mobile and speech support
+  useEffect(() => {
+    const checkMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    setIsMobile(checkMobile);
+    
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setSpeechSupported(!!SpeechRecognition);
+    
+    if (!SpeechRecognition) {
+      setSystemStatus('Speech recognition not supported on this browser. Please try Chrome or Edge.');
+    }
+  }, []);
 
   // Handle session start greeting
   useEffect(() => {
@@ -42,21 +58,35 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
       const translation = "Hello! I am Prof Julia, your French tutor. Let's start with the first exercise!";
       setFrenchResponse(greeting);
       setEnglishTranslation(translation);
-      generateTutorResponse(greeting, translation);
-
-      // Play the target phrase example after the greeting
-      setTimeout(() => {
-        playTargetPhrase();
-      }, 4000); // Wait 4 seconds after greeting
+      
+      // On mobile, wait for user interaction before playing audio
+      if (isMobile && !hasUserInteracted) {
+        setSystemStatus('Tap "Speak" or any button to enable audio and start learning');
+        onResponse(greeting, translation);
+      } else {
+        generateTutorResponse(greeting, translation);
+        // Play the target phrase example after the greeting
+        setTimeout(() => {
+          playTargetPhrase();
+        }, 4000); // Wait 4 seconds after greeting
+      }
     }
   }, [isActive]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'webkitSpeechRecognition' in window) {
-      const recognition = new (window as any).webkitSpeechRecognition();
+    // Check for both webkit and standard Speech Recognition APIs
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (typeof window !== 'undefined' && SpeechRecognition) {
+      const recognition = new SpeechRecognition();
       recognition.lang = 'fr-FR';
       recognition.continuous = false;
       recognition.interimResults = false;
+      
+      // Mobile-specific settings
+      if (recognition.maxAlternatives) {
+        recognition.maxAlternatives = 1;
+      }
       
       recognition.onstart = () => {
         setIsListening(true);
@@ -77,9 +107,22 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
         }
       };
 
-      recognition.onerror = () => {
+      recognition.onerror = (event: any) => {
         setIsListening(false);
-        setSystemStatus('Speech recognition error. Please try again.');
+        console.log('Speech recognition error:', event.error);
+        
+        // Mobile-specific error messages
+        if (event.error === 'not-allowed') {
+          setSystemStatus('Microphone access denied. Please enable microphone permissions.');
+        } else if (event.error === 'no-speech') {
+          setSystemStatus('No speech detected. Please speak clearly and try again.');
+        } else if (event.error === 'audio-capture') {
+          setSystemStatus('Microphone not available. Please check your device settings.');
+        } else if (event.error === 'network') {
+          setSystemStatus('Network error. Please check your internet connection.');
+        } else {
+          setSystemStatus('Speech recognition error. Please try again.');
+        }
       };
       
       recognitionRef.current = recognition;
@@ -93,8 +136,27 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
   }, []);
 
   const startListening = () => {
+    // Mark user interaction for mobile audio
+    if (!hasUserInteracted) {
+      setHasUserInteracted(true);
+    }
+    
+    if (!speechSupported) {
+      setSystemStatus('Speech recognition not supported. Please use Chrome or Edge browser.');
+      return;
+    }
+    
     if (recognitionRef.current && !isListening) {
-      recognitionRef.current.start();
+      try {
+        // Mobile-specific: Ensure microphone permission
+        if (isMobile) {
+          setSystemStatus('Requesting microphone access...');
+        }
+        recognitionRef.current.start();
+      } catch (error) {
+        console.error('Speech recognition start error:', error);
+        setSystemStatus('Could not start voice recognition. Please check browser permissions.');
+      }
     }
   };
 
@@ -152,7 +214,19 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
         
         if (audioRef.current) {
           audioRef.current.src = audioUrl;
-          audioRef.current.play();
+          
+          // Handle mobile autoplay restrictions
+          const playPromise = audioRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise.catch(() => {
+              // Mobile browsers block autoplay - require user interaction
+              if (isMobile && !hasUserInteracted) {
+                setSystemStatus('Tap anywhere to enable audio, then try again');
+              } else {
+                setSystemStatus('Audio blocked by browser. Click to enable audio.');
+              }
+            });
+          }
         }
       }
       
@@ -162,6 +236,20 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
       console.error('TTS Error:', error);
       setSystemStatus('Audio error, but feedback is ready');
       onResponse(text, translation || englishTranslation);
+    }
+  };
+
+  const enableMobileAudio = () => {
+    if (isMobile && !hasUserInteracted) {
+      setHasUserInteracted(true);
+      // Try to play a brief silent audio to unlock audio context
+      if (audioRef.current) {
+        const originalSrc = audioRef.current.src;
+        audioRef.current.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LBdSECJoDM8tmIMwU=';
+        audioRef.current.play().catch(() => {});
+        audioRef.current.src = originalSrc;
+      }
+      setSystemStatus('Audio enabled! Ready to start learning.');
     }
   };
 
@@ -183,7 +271,7 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
+    <div className="bg-white rounded-lg shadow-lg p-6" onClick={enableMobileAudio}>
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-xl font-semibold text-gray-800">Voice Practice</h3>
         <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
@@ -233,6 +321,37 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
           </>
         )}
       </div>
+
+      {/* Mobile Browser Compatibility Notice */}
+      {isMobile && !speechSupported && (
+        <div className="bg-orange-100 border border-orange-300 rounded-lg p-4 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="w-5 h-5 text-orange-600" />
+            <h4 className="font-medium text-orange-800">Browser Compatibility</h4>
+          </div>
+          <p className="text-orange-700 text-sm">
+            For the best experience on mobile, please use:
+          </p>
+          <ul className="text-orange-700 text-sm mt-1 ml-4">
+            <li>• Chrome on Android</li>
+            <li>• Safari on iOS (limited support)</li>
+            <li>• Edge browser</li>
+          </ul>
+        </div>
+      )}
+
+      {/* Mobile Audio Instructions */}
+      {isMobile && !hasUserInteracted && isActive && (
+        <div className="bg-blue-100 border border-blue-300 rounded-lg p-4 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Volume2 className="w-5 h-5 text-blue-600" />
+            <h4 className="font-medium text-blue-800">Mobile Audio Setup</h4>
+          </div>
+          <p className="text-blue-700 text-sm">
+            Tap any button to enable audio and start learning with Prof Julia!
+          </p>
+        </div>
+      )}
 
       {/* Status Display */}
       {isProcessing && (
