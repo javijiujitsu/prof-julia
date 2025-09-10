@@ -94,14 +94,18 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
       };
       
       recognition.onresult = (event: any) => {
+        console.log('Speech recognition result event:', event);
         const transcript = event.results[0][0].transcript;
+        console.log('Transcript received:', transcript);
         setUserSpeech(transcript);
         setSystemStatus('Processing your pronunciation...');
         handleUserSpeech(transcript);
       };
       
       recognition.onend = () => {
+        console.log('Speech recognition ended, isProcessing:', isProcessing);
         setIsListening(false);
+        // Don't override status if we're processing speech
         if (!isProcessing) {
           setSystemStatus('Ready to listen again');
         }
@@ -168,15 +172,25 @@ export function VoiceTutor({ isActive, onStart, onEnd, onResponse, currentLesson
 
   const handleUserSpeech = async (transcript: string) => {
     setIsProcessing(true);
+    console.log('Processing speech:', transcript);
     
-    // Simulate pronunciation and grammar checking
-    const response = await analyzeUserSpeech(transcript, currentLesson);
-    setFeedback(response.feedback);
-    
-    // Generate tutor response using ElevenLabs
-    await generateTutorResponse(response.tutorResponse, response.tutorResponseTranslation);
-    
-    setIsProcessing(false);
+    try {
+      // Simulate pronunciation and grammar checking
+      const response = await analyzeUserSpeech(transcript, currentLesson);
+      console.log('Analysis result:', response);
+      setFeedback(response.feedback);
+      
+      // Generate tutor response using ElevenLabs
+      await generateTutorResponse(response.tutorResponse, response.tutorResponseTranslation);
+      
+      setSystemStatus('Ready for your next attempt');
+    } catch (error) {
+      console.error('Error processing speech:', error);
+      setSystemStatus('Error processing speech. Please try again.');
+      setFeedback('Sorry, there was an error analyzing your pronunciation. Please try speaking again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const analyzeUserSpeech = async (transcript: string, lesson: Lesson) => {
