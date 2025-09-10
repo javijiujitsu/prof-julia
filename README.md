@@ -1,3 +1,10 @@
+
+
+
+
+
+
+
 # Prof Julia - Interactive French Tutor 🇫🇷
 
 An intelligent conversational French tutor prototype showcasing ElevenLabs TTS technology with real-time voice interaction and pronunciation feedback.
@@ -128,16 +135,12 @@ src/
 ## 🚧 Future Enhancements
 
 ### Advanced Features
-
-### Advanced Features
 - Speech-to-Speech pronunciation modeling
 - LiveKit voice rooms for multi-user sessions
 - Advanced phonetic analysis with IPA notation
 - Progress tracking and adaptive difficulty
 
-## 🎬 Demo Script
-
-**Perfect for ElevenLabs interviews:**
+## 🎬 Demo
 
 1. **Show real-time voice generation** - Natural French accent
 2. **Demonstrate pronunciation feedback** - Visual accuracy scores
